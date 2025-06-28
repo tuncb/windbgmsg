@@ -20,7 +20,10 @@ fn main() {
             Some(pid) => {
                 // Print the process ID and capture debug output
                 println!("Process ID: {}", pid);
-                capture_debug_output(pid);
+                if let Err(e) = capture_debug_output(pid) {
+                    eprintln!("Error capturing debug output: {}", e);
+                    process::exit(1);
+                }
             }
             None => {
                 eprintln!("Could not find process '{}'.", app_name);

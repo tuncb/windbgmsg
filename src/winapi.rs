@@ -42,6 +42,14 @@ unsafe extern "system" {
 
 pub const INVALID_HANDLE_VALUE: isize = -1isize;
 pub const TH32CS_SNAPPROCESS: u32 = 0x00000002;
+pub const DBWIN_BUFFER_READY: &str = "DBWIN_BUFFER_READY";
+pub const DBWIN_DATA_READY: &str = "DBWIN_DATA_READY";
+pub const DBWIN_BUFFER: &str = "DBWIN_BUFFER";
+pub const BUF_SIZE: usize = 4096;
+pub const WAIT_OBJECT_0: u32 = 0x00000000;
+pub const INFINITE: u32 = 0xFFFFFFFF;
+pub const FILE_MAP_READ: u32 = 0x0004;
+pub const PAGE_READWRITE: u32 = 0x04;
 
 #[allow(non_snake_case)]
 #[repr(C)]
@@ -56,4 +64,18 @@ pub struct PROCESSENTRY32W {
     pub pcPriClassBase: i32,
     pub dwFlags: u32,
     pub szExeFile: [u16; 260],
+}
+
+#[repr(C)]
+pub struct DBWinBuffer {
+    pub process_id: u32,
+    pub data: [u8; BUF_SIZE - 4],
+}
+
+#[inline]
+pub fn winapi_get_last_error() -> u32 {
+    unsafe extern "system" {
+        fn GetLastError() -> u32;
+    }
+    unsafe { GetLastError() }
 }
