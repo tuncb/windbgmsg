@@ -47,9 +47,9 @@ unsafe extern "system" {
     unsafe fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
 }
 
-const DBWIN_BUFFER_READY: &str = "Global\\DBWIN_BUFFER_READY";
-const DBWIN_DATA_READY: &str = "Global\\DBWIN_DATA_READY";
-const DBWIN_BUFFER: &str = "Global\\DBWIN_BUFFER";
+const DBWIN_BUFFER_READY: &str = "DBWIN_BUFFER_READY";
+const DBWIN_DATA_READY: &str = "DBWIN_DATA_READY";
+const DBWIN_BUFFER: &str = "DBWIN_BUFFER";
 const BUF_SIZE: usize = 4096;
 const WAIT_OBJECT_0: u32 = 0x00000000;
 const INFINITE: u32 = 0xFFFFFFFF;
