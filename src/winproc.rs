@@ -67,7 +67,7 @@ fn open_or_create_file_mapping(name: &str) -> Result<*mut std::ffi::c_void, u32>
     }
 }
 
-pub fn capture_debug_output(target_pid: u32) -> Result<(), u32> {
+pub fn capture_debug_output(target_pid: Option<u32>) -> Result<(), u32> {
     unsafe {
         // Try to open or create events and file mapping
         let ready_event = open_or_create_event(DBWIN_BUFFER_READY)?;
@@ -85,7 +85,7 @@ pub fn capture_debug_output(target_pid: u32) -> Result<(), u32> {
             let wait_result = WaitForSingleObject(data_event, INFINITE);
             if wait_result == WAIT_OBJECT_0 {
                 let pid = (*dbwin_buffer).process_id;
-                if pid == target_pid {
+                if target_pid.is_none() || Some(pid) == target_pid {
                     let msg = &(*dbwin_buffer).data;
                     let nul_pos = msg.iter().position(|&c| c == 0).unwrap_or(msg.len());
                     let msg = &msg[..nul_pos];

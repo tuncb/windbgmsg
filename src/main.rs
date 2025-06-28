@@ -20,7 +20,7 @@ fn main() {
             Some(pid) => {
                 // Print the process ID and capture debug output
                 println!("Process ID: {}", pid);
-                if let Err(e) = capture_debug_output(pid) {
+                if let Err(e) = capture_debug_output(Some(pid)) {
                     eprintln!("Error capturing debug output: {}", e);
                     process::exit(1);
                 }
@@ -31,8 +31,11 @@ fn main() {
             }
         },
         None => {
-            eprintln!("No app name provided. Please provide an app name as the first argument.");
-            process::exit(1);
+            println!("No app name provided. Capturing debug output from all processes.");
+            if let Err(e) = capture_debug_output(None) {
+                eprintln!("Error capturing debug output: {}", e);
+                process::exit(1);
+            }
         }
     }
 }
