@@ -1,51 +1,13 @@
 // winproc.rs
 // Windows process utilities for finding process ID by name
-use std::ffi::{OsStr, OsString, c_void};
-use std::mem::{size_of, zeroed};
+use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
-#[link(name = "kernel32")]
-unsafe extern "system" {
-    unsafe fn OpenEventW(
-        dwDesiredAccess: u32,
-        bInheritHandle: i32,
-        lpName: *const u16,
-    ) -> *mut c_void;
-    unsafe fn CreateEventW(
-        lpEventAttributes: *mut c_void,
-        bManualReset: i32,
-        bInitialState: i32,
-        lpName: *const u16,
-    ) -> *mut c_void;
-    unsafe fn CreateFileMappingW(
-        hFile: *mut c_void,
-        lpFileMappingAttributes: *mut c_void,
-        flProtect: u32,
-        dwMaximumSizeHigh: u32,
-        dwMaximumSizeLow: u32,
-        lpName: *const u16,
-    ) -> *mut c_void;
-    unsafe fn OpenFileMappingW(
-        dwDesiredAccess: u32,
-        bInheritHandle: i32,
-        lpName: *const u16,
-    ) -> *mut c_void;
-    unsafe fn MapViewOfFile(
-        hFileMappingObject: *mut c_void,
-        dwDesiredAccess: u32,
-        dwFileOffsetHigh: u32,
-        dwFileOffsetLow: u32,
-        dwNumberOfBytesToMap: usize,
-    ) -> *mut c_void;
-    unsafe fn UnmapViewOfFile(lpBaseAddress: *const c_void) -> i32;
-    unsafe fn SetEvent(hEvent: *mut c_void) -> i32;
-    unsafe fn WaitForSingleObject(hHandle: *mut c_void, dwMilliseconds: u32) -> u32;
-
-    unsafe fn CreateToolhelp32Snapshot(dwFlags: u32, th32ProcessID: u32) -> *mut std::ffi::c_void;
-    unsafe fn Process32FirstW(hSnapshot: *mut std::ffi::c_void, lppe: *mut PROCESSENTRY32W) -> i32;
-    unsafe fn Process32NextW(hSnapshot: *mut std::ffi::c_void, lppe: *mut PROCESSENTRY32W) -> i32;
-    unsafe fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
-}
+use crate::processiter::ProcessIterator;
+use crate::winapi::{
+    CreateEventW, CreateFileMappingW, MapViewOfFile, OpenEventW, OpenFileMappingW, SetEvent,
+    UnmapViewOfFile, WaitForSingleObject,
+};
 
 const DBWIN_BUFFER_READY: &str = "DBWIN_BUFFER_READY";
 const DBWIN_DATA_READY: &str = "DBWIN_DATA_READY";
@@ -55,23 +17,6 @@ const WAIT_OBJECT_0: u32 = 0x00000000;
 const INFINITE: u32 = 0xFFFFFFFF;
 const FILE_MAP_READ: u32 = 0x0004;
 const PAGE_READWRITE: u32 = 0x04;
-const TH32CS_SNAPPROCESS: u32 = 0x00000002;
-const INVALID_HANDLE_VALUE: isize = -1isize;
-
-#[allow(non_snake_case)]
-#[repr(C)]
-pub struct PROCESSENTRY32W {
-    pub dwSize: u32,
-    pub cntUsage: u32,
-    pub th32ProcessID: u32,
-    pub th32DefaultHeapID: usize,
-    pub th32ModuleID: u32,
-    pub cntThreads: u32,
-    pub th32ParentProcessID: u32,
-    pub pcPriClassBase: i32,
-    pub dwFlags: u32,
-    pub szExeFile: [u16; 260],
-}
 
 #[repr(C)]
 struct DBWinBuffer {
@@ -84,32 +29,17 @@ fn to_wide(s: &str) -> Vec<u16> {
 }
 
 pub fn find_process_id_by_name(app_name: &str) -> Option<u32> {
-    unsafe {
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if snapshot as isize == INVALID_HANDLE_VALUE {
-            return None;
+    ProcessIterator::new()?.find_map(|entry| {
+        let exe_name: OsString = OsString::from_wide(&entry.szExeFile);
+        let exe_name = exe_name.to_string_lossy();
+        let exe_name = exe_name.trim_end_matches(char::from(0));
+
+        if exe_name.eq_ignore_ascii_case(app_name) {
+            Some(entry.th32ProcessID)
+        } else {
+            None
         }
-        let mut entry: PROCESSENTRY32W = zeroed();
-        entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
-        if Process32FirstW(snapshot, &mut entry) == 0 {
-            CloseHandle(snapshot);
-            return None;
-        }
-        loop {
-            let exe_name = OsString::from_wide(&entry.szExeFile);
-            let exe_name = exe_name.to_string_lossy();
-            let exe_name = exe_name.trim_end_matches(char::from(0));
-            if exe_name.eq_ignore_ascii_case(app_name) {
-                CloseHandle(snapshot);
-                return Some(entry.th32ProcessID);
-            }
-            if Process32NextW(snapshot, &mut entry) == 0 {
-                break;
-            }
-        }
-        CloseHandle(snapshot);
-    }
-    None
+    })
 }
 
 pub fn capture_debug_output(target_pid: u32) {
