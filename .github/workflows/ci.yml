@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Upload release executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: windbgmsg-exe
+          path: target/release/windbgmsg.exe
