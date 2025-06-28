@@ -11,6 +11,8 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      exe-path: ${{ steps.build-release.outputs.exe-path }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,7 +24,10 @@ jobs:
           override: true
 
       - name: Build release
-        run: cargo build --release
+        id: build-release
+        run: |
+          cargo build --release
+          echo "exe-path=target/release/windbgmsg.exe" >> $GITHUB_OUTPUT
 
       - name: Upload release executable
         uses: actions/upload-artifact@v4
@@ -32,25 +37,18 @@ jobs:
 
   release:
     if: github.event_name == 'release'
+    needs: build
     runs-on: windows-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - name: Build release
-        run: cargo build --release
+          name: windbgmsg-exe
+          path: .
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/windbgmsg.exe
+          files: windbgmsg.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
