@@ -11,25 +11,56 @@ use crate::winproc::capture_debug_output;
 struct AppArgs {
     app_name: Option<String>,
     wait: bool,
+    help: bool,
 }
 
 fn get_args() -> AppArgs {
     let mut app_name = None;
     let mut wait = false;
+    let mut help = false;
     let mut args = env::args();
     args.next(); // skip program name
     for arg in args {
-        if arg == "--wait" {
+        if arg == "--help" || arg == "-h" {
+            help = true;
+        } else if arg == "--wait" {
             wait = true;
         } else if app_name.is_none() {
             app_name = Some(arg);
         }
     }
-    AppArgs { app_name, wait }
+    AppArgs {
+        app_name,
+        wait,
+        help,
+    }
+}
+
+fn print_help(program_name: &str) {
+    println!("windbgmsg {}", env!("CARGO_PKG_VERSION"));
+    println!();
+    println!("Usage:");
+    println!("  {} [process_name] [--wait]", program_name);
+    println!("  {} --help", program_name);
+    println!();
+    println!("Arguments:");
+    println!("  process_name    Optional executable name to monitor, for example notepad.exe");
+    println!();
+    println!("Options:");
+    println!("  --wait          Wait for process_name to start before capturing output");
+    println!("  -h, --help      Show this help message and exit");
 }
 
 fn main() {
+    let program_name = env::args()
+        .next()
+        .unwrap_or_else(|| "windbgmsg".to_string());
     let args = get_args();
+    if args.help {
+        print_help(&program_name);
+        return;
+    }
+
     match (args.app_name, args.wait) {
         (Some(app_name), true) => {
             // Wait for process to appear
