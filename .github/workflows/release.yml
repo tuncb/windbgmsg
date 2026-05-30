@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: x86_64-pc-windows-msvc
+
+    - name: Cache cargo registry
+      uses: actions/cache@v5
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v5
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v5
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build release
+      run: cargo build --release --target x86_64-pc-windows-msvc
+
+    - name: Prepare archive metadata
+      shell: pwsh
+      run: |
+        "ARCHIVE_BASE=windbgmsg-${{ github.ref_name }}-x86_64-pc-windows-msvc" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        "BINARY_PATH=target/x86_64-pc-windows-msvc/release/windbgmsg.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+    - name: Create archive
+      shell: pwsh
+      run: Compress-Archive -Path "${{ env.BINARY_PATH }}" -DestinationPath "${{ env.ARCHIVE_BASE }}.zip"
+
+    - name: Generate checksum
+      shell: pwsh
+      run: |
+        $hash = Get-FileHash "${{ env.ARCHIVE_BASE }}.zip" -Algorithm SHA256
+        "$($hash.Hash.ToLower())  ${{ env.ARCHIVE_BASE }}.zip" | Out-File -FilePath "${{ env.ARCHIVE_BASE }}.zip.sha256" -Encoding ASCII
+
+    - name: Upload archive artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: archive-x86_64-pc-windows-msvc
+        path: |
+          ${{ env.ARCHIVE_BASE }}.zip
+          ${{ env.ARCHIVE_BASE }}.zip.sha256
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Flatten artifacts
+      run: |
+        mkdir -p release-files
+        find artifacts -type f -exec mv {} release-files/ \;
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release-files/*
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        body: |
+          ## Installation
+
+          Download the Windows archive:
+
+          - **Windows (x86_64)**: `windbgmsg-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip`
+
+          Extract the archive and add `windbgmsg.exe` to your PATH.
+
+          ## Verifying Downloads
+
+          SHA256 checksums are provided for the archive. Verify your download in PowerShell:
+
+          ```pwsh
+          (Get-FileHash windbgmsg-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip).Hash -eq (Get-Content windbgmsg-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip.sha256).Split()[0]
+          ```
+
+          See the [README](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md) for full documentation.
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
