@@ -10,7 +10,8 @@ This document captures practical ideas for improving `windbgmsg`, a Rust Windows
 - `cargo test` passes, but there are currently no tests.
 - The app currently supports:
   - Capturing debug output from all processes.
-  - Capturing debug output from one process name.
+  - Capturing debug output from all current processes matching one process name.
+  - Following a process name with `--follow-name`.
   - Waiting for a named process with `--wait`.
   - Basic `--help` output.
 
@@ -20,8 +21,6 @@ This document captures practical ideas for improving `windbgmsg`, a Rust Windows
 
 - Add `--pid <pid>` for direct PID capture.
 - Allow multiple process filters, such as repeated `--process name.exe` values.
-- Capture all matching process names instead of only the first match.
-- Add `--follow-name` to keep tracking new PIDs when a process restarts.
 - Add `--list` to show matching processes before capture starts.
 
 ### Richer Output

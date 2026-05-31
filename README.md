@@ -1,6 +1,6 @@
 # windbgmsg
 
-This is a Rust console application that reads a process name or PID from the user via the command line and captures debug output from matching processes. If a process name is provided, it finds all currently running processes with that executable name before capturing. If no process name or PID is given, it captures debug output from all processes. If any Windows API call fails, the application will print the error code and exit.
+This is a Rust console application that reads a process name or PID from the user via the command line and captures debug output from matching processes. If a process name is provided, it finds all currently running processes with that executable name before capturing. With `--follow-name`, it keeps refreshing that process set so new and restarted matching processes are captured too. If no process name or PID is given, it captures debug output from all processes. If any Windows API call fails, the application will print the error code and exit.
 
 ## How to run
 
@@ -10,7 +10,7 @@ This is a Rust console application that reads a process name or PID from the use
    ```
 2. Run the project with the process name or PID as an argument (optional):
    ```pwsh
-   cargo run -- <process_name> [--wait]
+   cargo run -- <process_name> [--wait] [--follow-name]
    cargo run -- --pid <pid>
    ```
    Replace `<process_name>` with the name of the executable you want to monitor (e.g., `notepad.exe`). All currently running processes with that executable name will be monitored.
@@ -28,12 +28,18 @@ This is a Rust console application that reads a process name or PID from the use
      cargo run -- notepad.exe --wait
      ```
      The application will wait until at least one matching process starts, then attach to all matching processes found at that time and capture debug output.
+   - You can add the `--follow-name` switch to keep tracking matching processes after capture starts:
+     ```pwsh
+     cargo run -- notepad.exe --follow-name
+     ```
+     The application will update the captured PID set as matching processes start, exit, or restart.
    - If you use `--wait` without specifying a process name, or with `--pid`, the application will print an error and exit.
 
 ## Features
 - Finds all current process IDs by executable name (case-insensitive)
 - Captures debug output from a specific PID with `--pid <pid>`
 - Optionally waits for the process to appear using the `--wait` switch
+- Optionally follows process names using the `--follow-name` switch
 - Captures and prints debug output from the target process set, or from all processes if no name is given
 - Returns Windows error codes on failure for easier troubleshooting
 
@@ -42,6 +48,7 @@ This is a Rust console application that reads a process name or PID from the use
 cargo run -- notepad.exe         # Capture output from all current notepad.exe processes
 cargo run -- --pid 1234          # Capture output from PID 1234 only
 cargo run -- notepad.exe --wait  # Wait for notepad.exe to start, then capture output
+cargo run -- notepad.exe --follow-name  # Keep tracking notepad.exe restarts/new instances
 cargo run --                    # Capture output from all processes
 ```
 

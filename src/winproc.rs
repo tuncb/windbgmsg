@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::sync::{Arc, RwLock};
 
 use crate::processiter::ProcessIterator;
 use crate::winapi::{
@@ -40,6 +41,27 @@ fn matches_target_pid(target_pids: Option<&HashSet<u32>>, pid: u32) -> bool {
     match target_pids {
         Some(pids) => pids.contains(&pid),
         None => true,
+    }
+}
+
+pub type SharedTargetPids = Arc<RwLock<HashSet<u32>>>;
+
+pub enum CaptureTarget {
+    All,
+    StaticPids(HashSet<u32>),
+    SharedPids(SharedTargetPids),
+}
+
+impl CaptureTarget {
+    fn matches_pid(&self, pid: u32) -> bool {
+        match self {
+            CaptureTarget::All => true,
+            CaptureTarget::StaticPids(pids) => matches_target_pid(Some(pids), pid),
+            CaptureTarget::SharedPids(pids) => pids
+                .read()
+                .map(|pids| matches_target_pid(Some(&pids), pid))
+                .unwrap_or(false),
+        }
     }
 }
 
@@ -81,7 +103,7 @@ fn open_or_create_file_mapping(name: &str) -> Result<*mut std::ffi::c_void, u32>
     }
 }
 
-pub fn capture_debug_output(target_pids: Option<HashSet<u32>>) -> Result<(), u32> {
+pub fn capture_debug_output(target: CaptureTarget) -> Result<(), u32> {
     unsafe {
         // Try to open or create events and file mapping
         let ready_event = open_or_create_event(DBWIN_BUFFER_READY)?;
@@ -99,7 +121,7 @@ pub fn capture_debug_output(target_pids: Option<HashSet<u32>>) -> Result<(), u32
             let wait_result = WaitForSingleObject(data_event, INFINITE);
             if wait_result == WAIT_OBJECT_0 {
                 let pid = (*dbwin_buffer).process_id;
-                if matches_target_pid(target_pids.as_ref(), pid) {
+                if target.matches_pid(pid) {
                     let msg = &(*dbwin_buffer).data;
                     let nul_pos = msg.iter().position(|&c| c == 0).unwrap_or(msg.len());
                     let msg = &msg[..nul_pos];
