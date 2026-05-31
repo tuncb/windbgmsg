@@ -10,8 +10,8 @@ This is a Rust console application that reads a process name or PID from the use
    ```
 2. Run the project with the process name or PID as an argument (optional):
    ```pwsh
-   cargo run -- <process_name> [--wait] [--follow-name]
-   cargo run -- --pid <pid>
+   cargo run -- <process_name> [--wait] [--follow-name] [-o <file> [--append]]
+   cargo run -- --pid <pid> [-o <file> [--append]]
    ```
    Replace `<process_name>` with the name of the executable you want to monitor (e.g., `notepad.exe`). All currently running processes with that executable name will be monitored.
    Use `--pid <pid>` if you already know the target process ID.
@@ -33,6 +33,14 @@ This is a Rust console application that reads a process name or PID from the use
      cargo run -- notepad.exe --follow-name
      ```
      The application will update the captured PID set as matching processes start, exit, or restart.
+   - You can write captured debug output to a file with `--output <file>` or `-o <file>`:
+     ```pwsh
+     cargo run -- notepad.exe --output debug.log
+     ```
+     By default the file is replaced when capture starts. Add `--append` to append captured debug output to an existing file:
+     ```pwsh
+     cargo run -- notepad.exe --output debug.log --append
+     ```
    - If you use `--wait` without specifying a process name, or with `--pid`, the application will print an error and exit.
 
 ## Features
@@ -40,6 +48,8 @@ This is a Rust console application that reads a process name or PID from the use
 - Captures debug output from a specific PID with `--pid <pid>`
 - Optionally waits for the process to appear using the `--wait` switch
 - Optionally follows process names using the `--follow-name` switch
+- Optionally writes captured debug output to a file with `--output <file>` / `-o <file>`
+- Optionally appends to the output file with `--append`
 - Captures and prints debug output from the target process set, or from all processes if no name is given
 - Returns Windows error codes on failure for easier troubleshooting
 
@@ -49,6 +59,8 @@ cargo run -- notepad.exe         # Capture output from all current notepad.exe p
 cargo run -- --pid 1234          # Capture output from PID 1234 only
 cargo run -- notepad.exe --wait  # Wait for notepad.exe to start, then capture output
 cargo run -- notepad.exe --follow-name  # Keep tracking notepad.exe restarts/new instances
+cargo run -- notepad.exe -o debug.log  # Write captured output to debug.log
+cargo run -- notepad.exe -o debug.log --append  # Append captured output to debug.log
 cargo run --                    # Capture output from all processes
 ```
 

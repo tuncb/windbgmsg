@@ -1,5 +1,8 @@
 use std::collections::HashSet;
 use std::env;
+use std::fs::{File, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::{Arc, RwLock};
 use std::thread;
@@ -20,6 +23,8 @@ struct AppArgs {
     pid: Option<u32>,
     wait: bool,
     follow_name: bool,
+    output_file: Option<PathBuf>,
+    append: bool,
     help: bool,
 }
 
@@ -31,6 +36,23 @@ fn parse_pid(value: &str) -> Result<u32, String> {
     }
 }
 
+fn parse_output_file(value: &str) -> Result<PathBuf, String> {
+    if value.is_empty() {
+        return Err("--output requires a non-empty file path.".to_string());
+    }
+
+    Ok(PathBuf::from(value))
+}
+
+fn set_output_file(output_file: &mut Option<PathBuf>, value: &str) -> Result<(), String> {
+    if output_file.is_some() {
+        return Err("--output can only be specified once.".to_string());
+    }
+
+    *output_file = Some(parse_output_file(value)?);
+    Ok(())
+}
+
 fn parse_args<I>(args: I) -> Result<AppArgs, String>
 where
     I: IntoIterator<Item = String>,
@@ -39,6 +61,8 @@ where
     let mut pid = None;
     let mut wait = false;
     let mut follow_name = false;
+    let mut output_file = None;
+    let mut append = false;
     let mut help = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -48,6 +72,17 @@ where
             wait = true;
         } else if arg == "--follow-name" {
             follow_name = true;
+        } else if arg == "--append" {
+            append = true;
+        } else if arg == "--output" || arg == "-o" {
+            let value = args
+                .next()
+                .ok_or_else(|| "--output requires a file path.".to_string())?;
+            set_output_file(&mut output_file, &value)?;
+        } else if let Some(value) = arg.strip_prefix("--output=") {
+            set_output_file(&mut output_file, value)?;
+        } else if let Some(value) = arg.strip_prefix("-o=") {
+            set_output_file(&mut output_file, value)?;
         } else if arg == "--pid" {
             let value = args
                 .next()
@@ -84,11 +119,17 @@ where
         return Err("--follow-name requires a process name.".to_string());
     }
 
+    if append && output_file.is_none() {
+        return Err("--append requires --output <file>.".to_string());
+    }
+
     Ok(AppArgs {
         app_name,
         pid,
         wait,
         follow_name,
+        output_file,
+        append,
         help,
     })
 }
@@ -114,6 +155,9 @@ fn print_help(program_name: &str) {
     println!("  --pid <pid>     Monitor an existing process by PID");
     println!("  --wait          Wait for process_name to start before capturing output");
     println!("  --follow-name   Keep tracking new and restarted processes matching process_name");
+    println!("  -o, --output <file>");
+    println!("                  Write captured debug output to a file instead of stdout");
+    println!("  --append        Append to --output instead of replacing it");
     println!("  -h, --help      Show this help message and exit");
 }
 
@@ -166,6 +210,24 @@ fn start_pid_scanner(app_name: String, target_pids: SharedTargetPids) {
     });
 }
 
+fn open_output(output_file: Option<&Path>, append: bool) -> io::Result<Box<dyn Write>> {
+    match output_file {
+        Some(path) => {
+            let mut options = OpenOptions::new();
+            options.create(true).write(true);
+            if append {
+                options.append(true);
+            } else {
+                options.truncate(true);
+            }
+
+            let file: File = options.open(path)?;
+            Ok(Box::new(file))
+        }
+        None => Ok(Box::new(io::stdout())),
+    }
+}
+
 fn main() {
     let program_name = env::args()
         .next()
@@ -183,6 +245,14 @@ fn main() {
         return;
     }
 
+    let mut output = match open_output(args.output_file.as_deref(), args.append) {
+        Ok(output) => output,
+        Err(e) => {
+            eprintln!("Error opening output file: {}", e);
+            process::exit(1);
+        }
+    };
+
     match (args.app_name, args.pid, args.wait, args.follow_name) {
         (Some(app_name), None, true, follow_name) => {
             let target_pids = wait_for_target_pids(&app_name);
@@ -195,7 +265,7 @@ fn main() {
                 CaptureTarget::StaticPids(target_pids)
             };
 
-            if let Err(e) = capture_debug_output(target) {
+            if let Err(e) = capture_debug_output(target, &mut output) {
                 eprintln!("Error capturing debug output: {}", e);
                 process::exit(1);
             }
@@ -216,7 +286,7 @@ fn main() {
                 CaptureTarget::StaticPids(target_pids)
             };
 
-            if let Err(e) = capture_debug_output(target) {
+            if let Err(e) = capture_debug_output(target, &mut output) {
                 eprintln!("Error capturing debug output: {}", e);
                 process::exit(1);
             }
@@ -225,7 +295,9 @@ fn main() {
             println!("Process ID: {}", pid);
             let mut target_pids = HashSet::new();
             target_pids.insert(pid);
-            if let Err(e) = capture_debug_output(CaptureTarget::StaticPids(target_pids)) {
+            if let Err(e) =
+                capture_debug_output(CaptureTarget::StaticPids(target_pids), &mut output)
+            {
                 eprintln!("Error capturing debug output: {}", e);
                 process::exit(1);
             }
@@ -236,7 +308,7 @@ fn main() {
         }
         (None, None, false, false) => {
             println!("No app name provided. Capturing debug output from all processes.");
-            if let Err(e) = capture_debug_output(CaptureTarget::All) {
+            if let Err(e) = capture_debug_output(CaptureTarget::All, &mut output) {
                 eprintln!("Error capturing debug output: {}", e);
                 process::exit(1);
             }
@@ -306,6 +378,44 @@ mod tests {
     }
 
     #[test]
+    fn parses_output_option() {
+        let args = parse(&["notepad.exe", "--output", "debug.log"]).unwrap();
+        assert_eq!(
+            args.output_file.as_deref(),
+            Some(std::path::Path::new("debug.log"))
+        );
+        assert!(!args.append);
+    }
+
+    #[test]
+    fn parses_output_equals_option() {
+        let args = parse(&["--output=debug.log"]).unwrap();
+        assert_eq!(
+            args.output_file.as_deref(),
+            Some(std::path::Path::new("debug.log"))
+        );
+    }
+
+    #[test]
+    fn parses_short_output_option() {
+        let args = parse(&["-o", "debug.log"]).unwrap();
+        assert_eq!(
+            args.output_file.as_deref(),
+            Some(std::path::Path::new("debug.log"))
+        );
+    }
+
+    #[test]
+    fn parses_append_with_output() {
+        let args = parse(&["notepad.exe", "--output", "debug.log", "--append"]).unwrap();
+        assert_eq!(
+            args.output_file.as_deref(),
+            Some(std::path::Path::new("debug.log"))
+        );
+        assert!(args.append);
+    }
+
+    #[test]
     fn rejects_follow_name_with_pid() {
         let err = parse(&["--pid", "1234", "--follow-name"]).unwrap_err();
         assert!(err.contains("--follow-name can only be used with a process name"));
@@ -315,5 +425,23 @@ mod tests {
     fn rejects_follow_name_without_process_name() {
         let err = parse(&["--follow-name"]).unwrap_err();
         assert!(err.contains("--follow-name requires a process name"));
+    }
+
+    #[test]
+    fn rejects_append_without_output() {
+        let err = parse(&["notepad.exe", "--append"]).unwrap_err();
+        assert!(err.contains("--append requires --output"));
+    }
+
+    #[test]
+    fn rejects_duplicate_output() {
+        let err = parse(&["--output", "a.log", "--output", "b.log"]).unwrap_err();
+        assert!(err.contains("--output can only be specified once"));
+    }
+
+    #[test]
+    fn rejects_empty_output() {
+        let err = parse(&["--output="]).unwrap_err();
+        assert!(err.contains("--output requires a non-empty file path"));
     }
 }

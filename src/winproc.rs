@@ -2,6 +2,8 @@
 // Windows process utilities for finding process ID by name
 use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
+use std::fmt;
+use std::io::{self, Write};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::sync::{Arc, RwLock};
 
@@ -50,6 +52,33 @@ pub enum CaptureTarget {
     All,
     StaticPids(HashSet<u32>),
     SharedPids(SharedTargetPids),
+}
+
+#[derive(Debug)]
+pub enum CaptureError {
+    Windows(u32),
+    Io(io::Error),
+}
+
+impl fmt::Display for CaptureError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CaptureError::Windows(code) => write!(f, "Windows error {}", code),
+            CaptureError::Io(e) => write!(f, "I/O error: {}", e),
+        }
+    }
+}
+
+impl From<u32> for CaptureError {
+    fn from(value: u32) -> Self {
+        CaptureError::Windows(value)
+    }
+}
+
+impl From<io::Error> for CaptureError {
+    fn from(value: io::Error) -> Self {
+        CaptureError::Io(value)
+    }
 }
 
 impl CaptureTarget {
@@ -103,7 +132,10 @@ fn open_or_create_file_mapping(name: &str) -> Result<*mut std::ffi::c_void, u32>
     }
 }
 
-pub fn capture_debug_output(target: CaptureTarget) -> Result<(), u32> {
+pub fn capture_debug_output(
+    target: CaptureTarget,
+    output: &mut dyn Write,
+) -> Result<(), CaptureError> {
     unsafe {
         // Try to open or create events and file mapping
         let ready_event = open_or_create_event(DBWIN_BUFFER_READY)?;
@@ -112,7 +144,7 @@ pub fn capture_debug_output(target: CaptureTarget) -> Result<(), u32> {
 
         let buffer_ptr = MapViewOfFile(file_mapping, FILE_MAP_READ, 0, 0, BUF_SIZE);
         if buffer_ptr.is_null() {
-            return Err(winapi_get_last_error());
+            return Err(winapi_get_last_error().into());
         }
 
         let dbwin_buffer: *const DBWinBuffer = buffer_ptr as *const DBWinBuffer;
@@ -126,7 +158,8 @@ pub fn capture_debug_output(target: CaptureTarget) -> Result<(), u32> {
                     let nul_pos = msg.iter().position(|&c| c == 0).unwrap_or(msg.len());
                     let msg = &msg[..nul_pos];
                     if let Ok(s) = std::str::from_utf8(msg) {
-                        println!("[{}] {}", pid, s.trim_end());
+                        writeln!(output, "[{}] {}", pid, s.trim_end())?;
+                        output.flush()?;
                     }
                 }
             } else {
