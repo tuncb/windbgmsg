@@ -1,10 +1,11 @@
+use std::collections::HashSet;
 use std::env;
 use std::process;
 
 mod processiter;
 mod winapi;
 mod winproc;
-use winproc::find_process_id_by_name;
+use winproc::find_process_ids_by_name;
 
 use crate::winproc::capture_debug_output;
 
@@ -87,12 +88,23 @@ fn print_help(program_name: &str) {
     println!("  {} --help", program_name);
     println!();
     println!("Arguments:");
-    println!("  process_name    Optional executable name to monitor, for example notepad.exe");
+    println!(
+        "  process_name    Optional executable name to monitor across all current matching PIDs"
+    );
     println!();
     println!("Options:");
     println!("  --pid <pid>     Monitor an existing process by PID");
     println!("  --wait          Wait for process_name to start before capturing output");
     println!("  -h, --help      Show this help message and exit");
+}
+
+fn format_pids(pids: &HashSet<u32>) -> String {
+    let mut pids: Vec<u32> = pids.iter().copied().collect();
+    pids.sort_unstable();
+    pids.iter()
+        .map(u32::to_string)
+        .collect::<Vec<String>>()
+        .join(", ")
 }
 
 fn main() {
@@ -115,34 +127,39 @@ fn main() {
     match (args.app_name, args.pid, args.wait) {
         (Some(app_name), None, true) => {
             // Wait for process to appear
-            let pid = loop {
-                if let Some(pid) = find_process_id_by_name(&app_name) {
-                    break pid;
+            let pids = loop {
+                let pids = find_process_ids_by_name(&app_name);
+                if !pids.is_empty() {
+                    break pids;
                 }
                 std::thread::sleep(std::time::Duration::from_secs(1));
             };
-            println!("Process ID: {}", pid);
-            if let Err(e) = capture_debug_output(Some(pid)) {
+            let target_pids: HashSet<u32> = pids.into_iter().collect();
+            println!("Process IDs: {}", format_pids(&target_pids));
+            if let Err(e) = capture_debug_output(Some(target_pids)) {
                 eprintln!("Error capturing debug output: {}", e);
                 process::exit(1);
             }
         }
-        (Some(app_name), None, false) => match find_process_id_by_name(&app_name) {
-            Some(pid) => {
-                println!("Process ID: {}", pid);
-                if let Err(e) = capture_debug_output(Some(pid)) {
-                    eprintln!("Error capturing debug output: {}", e);
-                    process::exit(1);
-                }
-            }
-            None => {
+        (Some(app_name), None, false) => {
+            let pids = find_process_ids_by_name(&app_name);
+            if pids.is_empty() {
                 eprintln!("Could not find process '{}'.", app_name);
                 process::exit(1);
             }
-        },
+
+            let target_pids: HashSet<u32> = pids.into_iter().collect();
+            println!("Process IDs: {}", format_pids(&target_pids));
+            if let Err(e) = capture_debug_output(Some(target_pids)) {
+                eprintln!("Error capturing debug output: {}", e);
+                process::exit(1);
+            }
+        }
         (None, Some(pid), false) => {
             println!("Process ID: {}", pid);
-            if let Err(e) = capture_debug_output(Some(pid)) {
+            let mut target_pids = HashSet::new();
+            target_pids.insert(pid);
+            if let Err(e) = capture_debug_output(Some(target_pids)) {
                 eprintln!("Error capturing debug output: {}", e);
                 process::exit(1);
             }

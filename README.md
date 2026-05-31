@@ -1,6 +1,6 @@
 # windbgmsg
 
-This is a Rust console application that reads a process name or PID from the user via the command line and captures debug output from that process. If a process name is provided, it finds the process ID before capturing. If no process name or PID is given, it captures debug output from all processes. If any Windows API call fails, the application will print the error code and exit.
+This is a Rust console application that reads a process name or PID from the user via the command line and captures debug output from matching processes. If a process name is provided, it finds all currently running processes with that executable name before capturing. If no process name or PID is given, it captures debug output from all processes. If any Windows API call fails, the application will print the error code and exit.
 
 ## How to run
 
@@ -13,7 +13,7 @@ This is a Rust console application that reads a process name or PID from the use
    cargo run -- <process_name> [--wait]
    cargo run -- --pid <pid>
    ```
-   Replace `<process_name>` with the name of the executable you want to monitor (e.g., `notepad.exe`).
+   Replace `<process_name>` with the name of the executable you want to monitor (e.g., `notepad.exe`). All currently running processes with that executable name will be monitored.
    Use `--pid <pid>` if you already know the target process ID.
    - If you omit the argument, debug output from all processes will be captured:
      ```pwsh
@@ -27,19 +27,19 @@ This is a Rust console application that reads a process name or PID from the use
      ```pwsh
      cargo run -- notepad.exe --wait
      ```
-     The application will wait until the process starts, then attach and capture debug output.
+     The application will wait until at least one matching process starts, then attach to all matching processes found at that time and capture debug output.
    - If you use `--wait` without specifying a process name, or with `--pid`, the application will print an error and exit.
 
 ## Features
-- Finds the process ID by name (case-insensitive)
+- Finds all current process IDs by executable name (case-insensitive)
 - Captures debug output from a specific PID with `--pid <pid>`
 - Optionally waits for the process to appear using the `--wait` switch
-- Captures and prints debug output from the target process, or from all processes if no name is given
+- Captures and prints debug output from the target process set, or from all processes if no name is given
 - Returns Windows error codes on failure for easier troubleshooting
 
 ## Examples
 ```pwsh
-cargo run -- notepad.exe         # Capture output from notepad.exe only
+cargo run -- notepad.exe         # Capture output from all current notepad.exe processes
 cargo run -- --pid 1234          # Capture output from PID 1234 only
 cargo run -- notepad.exe --wait  # Wait for notepad.exe to start, then capture output
 cargo run --                    # Capture output from all processes

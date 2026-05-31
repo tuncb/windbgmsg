@@ -1,5 +1,6 @@
 // winproc.rs
 // Windows process utilities for finding process ID by name
+use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
@@ -15,18 +16,31 @@ fn to_wide(s: &str) -> Vec<u16> {
     OsStr::new(s).encode_wide().chain(Some(0)).collect()
 }
 
-pub fn find_process_id_by_name(app_name: &str) -> Option<u32> {
-    ProcessIterator::new()?.find_map(|entry| {
-        let exe_name: OsString = OsString::from_wide(&entry.szExeFile);
-        let exe_name = exe_name.to_string_lossy();
-        let exe_name = exe_name.trim_end_matches(char::from(0));
+pub fn find_process_ids_by_name(app_name: &str) -> Vec<u32> {
+    ProcessIterator::new()
+        .map(|processes| {
+            processes
+                .filter_map(|entry| {
+                    let exe_name: OsString = OsString::from_wide(&entry.szExeFile);
+                    let exe_name = exe_name.to_string_lossy();
+                    let exe_name = exe_name.trim_end_matches(char::from(0));
 
-        if exe_name.eq_ignore_ascii_case(app_name) {
-            Some(entry.th32ProcessID)
-        } else {
-            None
-        }
-    })
+                    if exe_name.eq_ignore_ascii_case(app_name) {
+                        Some(entry.th32ProcessID)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn matches_target_pid(target_pids: Option<&HashSet<u32>>, pid: u32) -> bool {
+    match target_pids {
+        Some(pids) => pids.contains(&pid),
+        None => true,
+    }
 }
 
 fn open_or_create_event(name: &str) -> Result<*mut std::ffi::c_void, u32> {
@@ -67,7 +81,7 @@ fn open_or_create_file_mapping(name: &str) -> Result<*mut std::ffi::c_void, u32>
     }
 }
 
-pub fn capture_debug_output(target_pid: Option<u32>) -> Result<(), u32> {
+pub fn capture_debug_output(target_pids: Option<HashSet<u32>>) -> Result<(), u32> {
     unsafe {
         // Try to open or create events and file mapping
         let ready_event = open_or_create_event(DBWIN_BUFFER_READY)?;
@@ -85,7 +99,7 @@ pub fn capture_debug_output(target_pid: Option<u32>) -> Result<(), u32> {
             let wait_result = WaitForSingleObject(data_event, INFINITE);
             if wait_result == WAIT_OBJECT_0 {
                 let pid = (*dbwin_buffer).process_id;
-                if target_pid.is_none() || Some(pid) == target_pid {
+                if matches_target_pid(target_pids.as_ref(), pid) {
                     let msg = &(*dbwin_buffer).data;
                     let nul_pos = msg.iter().position(|&c| c == 0).unwrap_or(msg.len());
                     let msg = &msg[..nul_pos];
