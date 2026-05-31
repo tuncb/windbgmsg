@@ -2,6 +2,8 @@
 
 This is a Rust console application that reads a process name or PID from the user via the command line and captures debug output from matching processes. If a process name is provided, it finds all currently running processes with that executable name before capturing. With `--follow-name`, it keeps refreshing that process set so new and restarted matching processes are captured too. If no process name or PID is given, it captures debug output from all processes. If any Windows API call fails, the application will print the error code and exit.
 
+While capturing, press `Esc` to exit the application.
+
 ## How to run
 
 1. Build the project:
@@ -50,6 +52,7 @@ This is a Rust console application that reads a process name or PID from the use
 - Optionally follows process names using the `--follow-name` switch
 - Optionally writes captured debug output to a file with `--output <file>` / `-o <file>`
 - Optionally appends to the output file with `--append`
+- Press `Esc` while capturing to exit
 - Captures and prints debug output from the target process set, or from all processes if no name is given
 - Returns Windows error codes on failure for easier troubleshooting
 

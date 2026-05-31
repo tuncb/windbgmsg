@@ -10,10 +10,12 @@ use std::sync::{Arc, RwLock};
 use crate::processiter::ProcessIterator;
 use crate::winapi::{
     BUF_SIZE, CreateEventW, CreateFileMappingW, DBWIN_BUFFER, DBWIN_BUFFER_READY, DBWIN_DATA_READY,
-    DBWinBuffer, FILE_MAP_READ, INFINITE, MapViewOfFile, OpenEventW, OpenFileMappingW,
-    PAGE_READWRITE, SetEvent, UnmapViewOfFile, WAIT_OBJECT_0, WaitForSingleObject,
-    winapi_get_last_error,
+    DBWinBuffer, FILE_MAP_READ, GetAsyncKeyState, MapViewOfFile, OpenEventW, OpenFileMappingW,
+    PAGE_READWRITE, SetEvent, UnmapViewOfFile, VK_ESCAPE, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    WaitForSingleObject, winapi_get_last_error,
 };
+
+const CAPTURE_WAIT_TIMEOUT_MS: u32 = 100;
 
 fn to_wide(s: &str) -> Vec<u16> {
     OsStr::new(s).encode_wide().chain(Some(0)).collect()
@@ -94,6 +96,10 @@ impl CaptureTarget {
     }
 }
 
+fn escape_is_pressed() -> bool {
+    unsafe { GetAsyncKeyState(VK_ESCAPE) < 0 }
+}
+
 fn open_or_create_event(name: &str) -> Result<*mut std::ffi::c_void, u32> {
     unsafe {
         let event = OpenEventW(0x1F0003, 0, to_wide(name).as_ptr());
@@ -149,8 +155,13 @@ pub fn capture_debug_output(
 
         let dbwin_buffer: *const DBWinBuffer = buffer_ptr as *const DBWinBuffer;
         loop {
+            if escape_is_pressed() {
+                eprintln!("Escape pressed. Exiting.");
+                break;
+            }
+
             SetEvent(ready_event);
-            let wait_result = WaitForSingleObject(data_event, INFINITE);
+            let wait_result = WaitForSingleObject(data_event, CAPTURE_WAIT_TIMEOUT_MS);
             if wait_result == WAIT_OBJECT_0 {
                 let pid = (*dbwin_buffer).process_id;
                 if target.matches_pid(pid) {
@@ -162,8 +173,10 @@ pub fn capture_debug_output(
                         output.flush()?;
                     }
                 }
+            } else if wait_result == WAIT_TIMEOUT {
+                continue;
             } else {
-                eprintln!("WaitForSingleObject failed or timed out.");
+                eprintln!("WaitForSingleObject failed.");
                 break;
             }
         }

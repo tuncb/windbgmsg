@@ -159,6 +159,8 @@ fn print_help(program_name: &str) {
     println!("                  Write captured debug output to a file instead of stdout");
     println!("  --append        Append to --output instead of replacing it");
     println!("  -h, --help      Show this help message and exit");
+    println!();
+    println!("Press Esc while capturing to exit.");
 }
 
 fn format_pids(pids: &HashSet<u32>) -> String {

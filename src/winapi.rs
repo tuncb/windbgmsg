@@ -40,6 +40,11 @@ unsafe extern "system" {
     pub fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
 }
 
+#[link(name = "user32")]
+unsafe extern "system" {
+    pub fn GetAsyncKeyState(vKey: i32) -> i16;
+}
+
 pub const INVALID_HANDLE_VALUE: isize = -1isize;
 pub const TH32CS_SNAPPROCESS: u32 = 0x00000002;
 pub const DBWIN_BUFFER_READY: &str = "DBWIN_BUFFER_READY";
@@ -47,9 +52,10 @@ pub const DBWIN_DATA_READY: &str = "DBWIN_DATA_READY";
 pub const DBWIN_BUFFER: &str = "DBWIN_BUFFER";
 pub const BUF_SIZE: usize = 4096;
 pub const WAIT_OBJECT_0: u32 = 0x00000000;
-pub const INFINITE: u32 = 0xFFFFFFFF;
+pub const WAIT_TIMEOUT: u32 = 0x00000102;
 pub const FILE_MAP_READ: u32 = 0x0004;
 pub const PAGE_READWRITE: u32 = 0x04;
+pub const VK_ESCAPE: i32 = 0x1B;
 
 #[allow(non_snake_case)]
 #[repr(C)]
