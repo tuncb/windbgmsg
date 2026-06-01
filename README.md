@@ -17,8 +17,8 @@ Captured messages are written with a local timestamp and PID:
    ```
 2. Run the project with the process name or PID as an argument (optional):
    ```pwsh
-   cargo run -- <process_name> [--wait] [--follow-name] [-o <file> [--append]]
-   cargo run -- --pid <pid> [-o <file> [--append]]
+   cargo run -- <process_name> [--wait] [--follow-name] [--highlight <word[,word...]>] [-o <file> [--append]]
+   cargo run -- --pid <pid> [--highlight <word[,word...]>] [-o <file> [--append]]
    ```
    Replace `<process_name>` with the name of the executable you want to monitor (e.g., `notepad.exe`). All currently running processes with that executable name will be monitored.
    Use `--pid <pid>` if you already know the target process ID.
@@ -48,6 +48,11 @@ Captured messages are written with a local timestamp and PID:
      ```pwsh
      cargo run -- notepad.exe --output debug.log --append
      ```
+   - You can highlight matching words in blue on stdout with `--highlight <word[,word...]>`:
+     ```pwsh
+     cargo run -- notepad.exe --highlight error,warn
+     ```
+     Matching is case-insensitive. When `--output` is used, the file stays plain text without ANSI color codes.
    - If you use `--wait` without specifying a process name, or with `--pid`, the application will print an error and exit.
 
 ## Features
@@ -57,6 +62,7 @@ Captured messages are written with a local timestamp and PID:
 - Optionally follows process names using the `--follow-name` switch
 - Optionally writes captured debug output to a file with `--output <file>` / `-o <file>`
 - Optionally appends to the output file with `--append`
+- Optionally highlights matching words in blue on stdout with `--highlight`
 - Adds a local timestamp and PID to each captured message
 - Press `Esc` while capturing to exit
 - Captures and prints debug output from the target process set, or from all processes if no name is given
@@ -70,6 +76,7 @@ cargo run -- notepad.exe --wait  # Wait for notepad.exe to start, then capture o
 cargo run -- notepad.exe --follow-name  # Keep tracking notepad.exe restarts/new instances
 cargo run -- notepad.exe -o debug.log  # Write captured output to debug.log
 cargo run -- notepad.exe -o debug.log --append  # Append captured output to debug.log
+cargo run -- notepad.exe --highlight error,warn  # Highlight matching words in blue
 cargo run --                    # Capture output from all processes
 ```
 

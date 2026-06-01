@@ -17,6 +17,8 @@ use crate::winapi::{
 };
 
 const CAPTURE_WAIT_TIMEOUT_MS: u32 = 100;
+const ANSI_BLUE: &str = "\x1b[34m";
+const ANSI_DEFAULT_FOREGROUND: &str = "\x1b[39m";
 
 fn to_wide(s: &str) -> Vec<u16> {
     OsStr::new(s).encode_wide().chain(Some(0)).collect()
@@ -122,6 +124,45 @@ fn current_timestamp() -> String {
     }
 }
 
+fn highlight_text(text: &str, words: &[String]) -> String {
+    if words.is_empty() {
+        return text.to_string();
+    }
+
+    let mut highlighted = String::with_capacity(text.len());
+    let mut index = 0;
+    while index < text.len() {
+        let best_match = words
+            .iter()
+            .filter(|word| !word.is_empty())
+            .filter_map(|word| {
+                let end = index.checked_add(word.len())?;
+                if end <= text.len()
+                    && text.is_char_boundary(end)
+                    && text[index..end].eq_ignore_ascii_case(word)
+                {
+                    Some(end)
+                } else {
+                    None
+                }
+            })
+            .max_by_key(|end| end - index);
+
+        if let Some(end) = best_match {
+            highlighted.push_str(ANSI_BLUE);
+            highlighted.push_str(&text[index..end]);
+            highlighted.push_str(ANSI_DEFAULT_FOREGROUND);
+            index = end;
+        } else {
+            let ch = text[index..].chars().next().expect("index is in bounds");
+            highlighted.push(ch);
+            index += ch.len_utf8();
+        }
+    }
+
+    highlighted
+}
+
 fn open_or_create_event(name: &str) -> Result<*mut std::ffi::c_void, u32> {
     unsafe {
         let event = OpenEventW(0x1F0003, 0, to_wide(name).as_ptr());
@@ -163,6 +204,7 @@ fn open_or_create_file_mapping(name: &str) -> Result<*mut std::ffi::c_void, u32>
 pub fn capture_debug_output(
     target: CaptureTarget,
     output: &mut dyn Write,
+    highlight_words: &[String],
 ) -> Result<(), CaptureError> {
     unsafe {
         // Try to open or create events and file mapping
@@ -191,13 +233,8 @@ pub fn capture_debug_output(
                     let nul_pos = msg.iter().position(|&c| c == 0).unwrap_or(msg.len());
                     let msg = &msg[..nul_pos];
                     if let Ok(s) = std::str::from_utf8(msg) {
-                        writeln!(
-                            output,
-                            "[{}] [{}] {}",
-                            current_timestamp(),
-                            pid,
-                            s.trim_end()
-                        )?;
+                        let line = format!("[{}] [{}] {}", current_timestamp(), pid, s.trim_end());
+                        writeln!(output, "{}", highlight_text(&line, highlight_words))?;
                         output.flush()?;
                     }
                 }
@@ -215,7 +252,7 @@ pub fn capture_debug_output(
 
 #[cfg(test)]
 mod tests {
-    use super::{SYSTEMTIME, format_timestamp};
+    use super::{SYSTEMTIME, format_timestamp, highlight_text};
 
     #[test]
     fn formats_timestamp_with_milliseconds() {
@@ -231,5 +268,30 @@ mod tests {
         };
 
         assert_eq!(format_timestamp(&time), "2026-06-01 09:08:07.006");
+    }
+
+    #[test]
+    fn highlights_matching_words_case_insensitively() {
+        let words = vec!["error".to_string()];
+
+        assert_eq!(
+            highlight_text("An ERROR occurred", &words),
+            "An \x1b[34mERROR\x1b[39m occurred"
+        );
+    }
+
+    #[test]
+    fn highlights_longest_matching_word_first() {
+        let words = vec!["error".to_string(), "error code".to_string()];
+
+        assert_eq!(
+            highlight_text("error code 5", &words),
+            "\x1b[34merror code\x1b[39m 5"
+        );
+    }
+
+    #[test]
+    fn leaves_text_unchanged_without_highlight_words() {
+        assert_eq!(highlight_text("plain output", &[]), "plain output");
     }
 }

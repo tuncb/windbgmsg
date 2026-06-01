@@ -25,6 +25,7 @@ struct AppArgs {
     follow_name: bool,
     output_file: Option<PathBuf>,
     append: bool,
+    highlight_words: Vec<String>,
     help: bool,
 }
 
@@ -53,6 +54,21 @@ fn set_output_file(output_file: &mut Option<PathBuf>, value: &str) -> Result<(),
     Ok(())
 }
 
+fn parse_highlight_words(value: &str) -> Result<Vec<String>, String> {
+    let words: Vec<String> = value
+        .split(',')
+        .map(str::trim)
+        .filter(|word| !word.is_empty())
+        .map(str::to_string)
+        .collect();
+
+    if words.is_empty() {
+        return Err("--highlight requires at least one non-empty word.".to_string());
+    }
+
+    Ok(words)
+}
+
 fn parse_args<I>(args: I) -> Result<AppArgs, String>
 where
     I: IntoIterator<Item = String>,
@@ -63,6 +79,7 @@ where
     let mut follow_name = false;
     let mut output_file = None;
     let mut append = false;
+    let mut highlight_words = Vec::new();
     let mut help = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -83,6 +100,13 @@ where
             set_output_file(&mut output_file, value)?;
         } else if let Some(value) = arg.strip_prefix("-o=") {
             set_output_file(&mut output_file, value)?;
+        } else if arg == "--highlight" {
+            let value = args
+                .next()
+                .ok_or_else(|| "--highlight requires a comma-separated word list.".to_string())?;
+            highlight_words.extend(parse_highlight_words(&value)?);
+        } else if let Some(value) = arg.strip_prefix("--highlight=") {
+            highlight_words.extend(parse_highlight_words(value)?);
         } else if arg == "--pid" {
             let value = args
                 .next()
@@ -130,6 +154,7 @@ where
         follow_name,
         output_file,
         append,
+        highlight_words,
         help,
     })
 }
@@ -142,8 +167,14 @@ fn print_help(program_name: &str) {
     println!("windbgmsg {}", env!("CARGO_PKG_VERSION"));
     println!();
     println!("Usage:");
-    println!("  {} [process_name] [--wait] [--follow-name]", program_name);
-    println!("  {} --pid <pid>", program_name);
+    println!(
+        "  {} [process_name] [--wait] [--follow-name] [--highlight <word[,word...]>]",
+        program_name
+    );
+    println!(
+        "  {} --pid <pid> [--highlight <word[,word...]>]",
+        program_name
+    );
     println!("  {} --help", program_name);
     println!();
     println!("Arguments:");
@@ -158,6 +189,8 @@ fn print_help(program_name: &str) {
     println!("  -o, --output <file>");
     println!("                  Write captured debug output to a file instead of stdout");
     println!("  --append        Append to --output instead of replacing it");
+    println!("  --highlight <word[,word...]>");
+    println!("                  Highlight matching words in blue when writing to stdout");
     println!("  -h, --help      Show this help message and exit");
     println!();
     println!("Press Esc while capturing to exit.");
@@ -247,7 +280,14 @@ fn main() {
         return;
     }
 
-    let mut output = match open_output(args.output_file.as_deref(), args.append) {
+    let output_file = args.output_file;
+    let highlight_words = if output_file.is_none() {
+        args.highlight_words
+    } else {
+        Vec::new()
+    };
+
+    let mut output = match open_output(output_file.as_deref(), args.append) {
         Ok(output) => output,
         Err(e) => {
             eprintln!("Error opening output file: {}", e);
@@ -267,7 +307,7 @@ fn main() {
                 CaptureTarget::StaticPids(target_pids)
             };
 
-            if let Err(e) = capture_debug_output(target, &mut output) {
+            if let Err(e) = capture_debug_output(target, &mut output, &highlight_words) {
                 eprintln!("Error capturing debug output: {}", e);
                 process::exit(1);
             }
@@ -288,7 +328,7 @@ fn main() {
                 CaptureTarget::StaticPids(target_pids)
             };
 
-            if let Err(e) = capture_debug_output(target, &mut output) {
+            if let Err(e) = capture_debug_output(target, &mut output, &highlight_words) {
                 eprintln!("Error capturing debug output: {}", e);
                 process::exit(1);
             }
@@ -297,9 +337,11 @@ fn main() {
             println!("Process ID: {}", pid);
             let mut target_pids = HashSet::new();
             target_pids.insert(pid);
-            if let Err(e) =
-                capture_debug_output(CaptureTarget::StaticPids(target_pids), &mut output)
-            {
+            if let Err(e) = capture_debug_output(
+                CaptureTarget::StaticPids(target_pids),
+                &mut output,
+                &highlight_words,
+            ) {
                 eprintln!("Error capturing debug output: {}", e);
                 process::exit(1);
             }
@@ -310,7 +352,8 @@ fn main() {
         }
         (None, None, false, false) => {
             println!("No app name provided. Capturing debug output from all processes.");
-            if let Err(e) = capture_debug_output(CaptureTarget::All, &mut output) {
+            if let Err(e) = capture_debug_output(CaptureTarget::All, &mut output, &highlight_words)
+            {
                 eprintln!("Error capturing debug output: {}", e);
                 process::exit(1);
             }
@@ -418,6 +461,24 @@ mod tests {
     }
 
     #[test]
+    fn parses_highlight_option() {
+        let args = parse(&["notepad.exe", "--highlight", "error,warn"]).unwrap();
+        assert_eq!(args.highlight_words, vec!["error", "warn"]);
+    }
+
+    #[test]
+    fn parses_highlight_equals_option() {
+        let args = parse(&["--highlight=error, warn"]).unwrap();
+        assert_eq!(args.highlight_words, vec!["error", "warn"]);
+    }
+
+    #[test]
+    fn parses_repeated_highlight_options() {
+        let args = parse(&["--highlight", "error", "--highlight", "warn"]).unwrap();
+        assert_eq!(args.highlight_words, vec!["error", "warn"]);
+    }
+
+    #[test]
     fn rejects_follow_name_with_pid() {
         let err = parse(&["--pid", "1234", "--follow-name"]).unwrap_err();
         assert!(err.contains("--follow-name can only be used with a process name"));
@@ -445,5 +506,11 @@ mod tests {
     fn rejects_empty_output() {
         let err = parse(&["--output="]).unwrap_err();
         assert!(err.contains("--output requires a non-empty file path"));
+    }
+
+    #[test]
+    fn rejects_empty_highlight() {
+        let err = parse(&["--highlight=,"]).unwrap_err();
+        assert!(err.contains("--highlight requires at least one non-empty word"));
     }
 }
