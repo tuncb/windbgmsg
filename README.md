@@ -4,6 +4,11 @@ This is a Rust console application that reads a process name or PID from the use
 
 While capturing, press `Esc` to exit the application.
 
+Captured messages are written with a local timestamp and PID:
+```text
+[2026-06-01 09:08:07.006] [1234] message
+```
+
 ## How to run
 
 1. Build the project:
@@ -52,6 +57,7 @@ While capturing, press `Esc` to exit the application.
 - Optionally follows process names using the `--follow-name` switch
 - Optionally writes captured debug output to a file with `--output <file>` / `-o <file>`
 - Optionally appends to the output file with `--append`
+- Adds a local timestamp and PID to each captured message
 - Press `Esc` while capturing to exit
 - Captures and prints debug output from the target process set, or from all processes if no name is given
 - Returns Windows error codes on failure for easier troubleshooting

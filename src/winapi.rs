@@ -2,6 +2,8 @@ use std::ffi::c_void;
 
 #[link(name = "kernel32")]
 unsafe extern "system" {
+    pub fn GetLocalTime(lpSystemTime: *mut SYSTEMTIME);
+
     pub fn OpenEventW(dwDesiredAccess: u32, bInheritHandle: i32, lpName: *const u16)
     -> *mut c_void;
     pub fn CreateEventW(
@@ -56,6 +58,19 @@ pub const WAIT_TIMEOUT: u32 = 0x00000102;
 pub const FILE_MAP_READ: u32 = 0x0004;
 pub const PAGE_READWRITE: u32 = 0x04;
 pub const VK_ESCAPE: i32 = 0x1B;
+
+#[allow(non_snake_case)]
+#[repr(C)]
+pub struct SYSTEMTIME {
+    pub wYear: u16,
+    pub wMonth: u16,
+    pub wDayOfWeek: u16,
+    pub wDay: u16,
+    pub wHour: u16,
+    pub wMinute: u16,
+    pub wSecond: u16,
+    pub wMilliseconds: u16,
+}
 
 #[allow(non_snake_case)]
 #[repr(C)]

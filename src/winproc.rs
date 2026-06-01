@@ -4,15 +4,16 @@ use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io::{self, Write};
+use std::mem::zeroed;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::sync::{Arc, RwLock};
 
 use crate::processiter::ProcessIterator;
 use crate::winapi::{
     BUF_SIZE, CreateEventW, CreateFileMappingW, DBWIN_BUFFER, DBWIN_BUFFER_READY, DBWIN_DATA_READY,
-    DBWinBuffer, FILE_MAP_READ, GetAsyncKeyState, MapViewOfFile, OpenEventW, OpenFileMappingW,
-    PAGE_READWRITE, SetEvent, UnmapViewOfFile, VK_ESCAPE, WAIT_OBJECT_0, WAIT_TIMEOUT,
-    WaitForSingleObject, winapi_get_last_error,
+    DBWinBuffer, FILE_MAP_READ, GetAsyncKeyState, GetLocalTime, MapViewOfFile, OpenEventW,
+    OpenFileMappingW, PAGE_READWRITE, SYSTEMTIME, SetEvent, UnmapViewOfFile, VK_ESCAPE,
+    WAIT_OBJECT_0, WAIT_TIMEOUT, WaitForSingleObject, winapi_get_last_error,
 };
 
 const CAPTURE_WAIT_TIMEOUT_MS: u32 = 100;
@@ -100,6 +101,27 @@ fn escape_is_pressed() -> bool {
     unsafe { GetAsyncKeyState(VK_ESCAPE) < 0 }
 }
 
+fn format_timestamp(time: &SYSTEMTIME) -> String {
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",
+        time.wYear,
+        time.wMonth,
+        time.wDay,
+        time.wHour,
+        time.wMinute,
+        time.wSecond,
+        time.wMilliseconds
+    )
+}
+
+fn current_timestamp() -> String {
+    unsafe {
+        let mut time: SYSTEMTIME = zeroed();
+        GetLocalTime(&mut time);
+        format_timestamp(&time)
+    }
+}
+
 fn open_or_create_event(name: &str) -> Result<*mut std::ffi::c_void, u32> {
     unsafe {
         let event = OpenEventW(0x1F0003, 0, to_wide(name).as_ptr());
@@ -169,7 +191,13 @@ pub fn capture_debug_output(
                     let nul_pos = msg.iter().position(|&c| c == 0).unwrap_or(msg.len());
                     let msg = &msg[..nul_pos];
                     if let Ok(s) = std::str::from_utf8(msg) {
-                        writeln!(output, "[{}] {}", pid, s.trim_end())?;
+                        writeln!(
+                            output,
+                            "[{}] [{}] {}",
+                            current_timestamp(),
+                            pid,
+                            s.trim_end()
+                        )?;
                         output.flush()?;
                     }
                 }
@@ -182,5 +210,26 @@ pub fn capture_debug_output(
         }
         UnmapViewOfFile(buffer_ptr);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SYSTEMTIME, format_timestamp};
+
+    #[test]
+    fn formats_timestamp_with_milliseconds() {
+        let time = SYSTEMTIME {
+            wYear: 2026,
+            wMonth: 6,
+            wDayOfWeek: 1,
+            wDay: 1,
+            wHour: 9,
+            wMinute: 8,
+            wSecond: 7,
+            wMilliseconds: 6,
+        };
+
+        assert_eq!(format_timestamp(&time), "2026-06-01 09:08:07.006");
     }
 }
